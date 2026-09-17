@@ -36,3 +36,13 @@ jobs:
         shell: powershell
         run: |
           & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" --version
+          
+      - name: Create Python 3.8.5 environment
+        shell: powershell
+        run: |
+          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" create -y -n temp_py38 python=3.8.5 pip
+
+      - name: Check Python 3.8.5
+        shell: powershell
+        run: |
+          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" run -n temp_py38 python --version
