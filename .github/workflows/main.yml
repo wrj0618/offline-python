@@ -1,24 +1,13 @@
-name: Test Windows Runner
+name: Build Python 3.8.5 Offline Package
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  build:
     runs-on: windows-2025
 
     steps:
-      - name: Check Windows
-        run: |
-          systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
-
-      - name: Check Python
-        run: |
-          python --version
-
-      - name: Check PowerShell
-        run: |
-          $PSVersionTable.PSVersion
 
       - name: Install Miniconda
         shell: powershell
@@ -36,7 +25,7 @@ jobs:
         shell: powershell
         run: |
           & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" --version
-          
+
       - name: Create Python 3.8.5 environment
         shell: powershell
         run: |
@@ -46,3 +35,30 @@ jobs:
         shell: powershell
         run: |
           & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" run -n temp_py38 python --version
+
+      - name: Download Python 3.8.5 packages
+        shell: powershell
+        run: |
+          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" install -n temp_py38 python=3.8.5 pip --download-only -y
+
+      - name: Package Conda files
+        shell: powershell
+        run: |
+          $pkgs = "$env:RUNNER_TEMP\Miniconda3\pkgs"
+          $output = "$env:GITHUB_WORKSPACE\conda-packages"
+
+          New-Item -ItemType Directory -Force -Path $output
+
+          Copy-Item "$pkgs\*.conda" $output -ErrorAction SilentlyContinue
+          Copy-Item "$pkgs\*.tar.bz2" $output -ErrorAction SilentlyContinue
+
+          Compress-Archive `
+            -Path "$output\*" `
+            -DestinationPath "$env:GITHUB_WORKSPACE\conda-packages.zip" `
+            -Force
+
+      - name: Upload offline packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.8.5-conda-packages
+          path: conda-packages.zip
