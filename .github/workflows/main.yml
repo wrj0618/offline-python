@@ -19,3 +19,8 @@ jobs:
       - name: Check PowerShell
         run: |
           $PSVersionTable.PSVersion
+
+      - name: Check Conda
+        shell: powershell
+        run: |
+          conda --version
