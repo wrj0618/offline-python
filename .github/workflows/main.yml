@@ -20,7 +20,19 @@ jobs:
         run: |
           $PSVersionTable.PSVersion
 
+      - name: Install Miniconda
+        shell: powershell
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe" `
+            -OutFile "$env:RUNNER_TEMP\miniconda.exe"
+
+          Start-Process `
+            -FilePath "$env:RUNNER_TEMP\miniconda.exe" `
+            -ArgumentList "/InstallationType=JustMe", "/RegisterPython=0", "/S", "/D=$env:RUNNER_TEMP\Miniconda3" `
+            -Wait
+
       - name: Check Conda
         shell: powershell
         run: |
-          conda --version
+          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" --version
