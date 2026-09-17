@@ -9,56 +9,187 @@ jobs:
 
     steps:
 
+      # --------------------------------------------------
+      # 1. 安裝 Miniconda
+      # --------------------------------------------------
       - name: Install Miniconda
         shell: powershell
         run: |
+          $installer = "$env:RUNNER_TEMP\miniconda.exe"
+          $condaPath = "$env:RUNNER_TEMP\Miniconda3"
+
+          Write-Host "Downloading Miniconda..."
+
           Invoke-WebRequest `
             -Uri "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe" `
-            -OutFile "$env:RUNNER_TEMP\miniconda.exe"
+            -OutFile $installer
+
+          Write-Host "Installing Miniconda..."
 
           Start-Process `
-            -FilePath "$env:RUNNER_TEMP\miniconda.exe" `
-            -ArgumentList "/InstallationType=JustMe", "/RegisterPython=0", "/S", "/D=$env:RUNNER_TEMP\Miniconda3" `
+            -FilePath $installer `
+            -ArgumentList `
+              "/InstallationType=JustMe", `
+              "/RegisterPython=0", `
+              "/S", `
+              "/D=$condaPath" `
             -Wait
 
+          Write-Host "Miniconda installed at:"
+          Write-Host $condaPath
+
+      # --------------------------------------------------
+      # 2. 確認 Conda
+      # --------------------------------------------------
       - name: Check Conda
         shell: powershell
         run: |
-          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" --version
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
 
-      - name: Create Python 3.8.5 environment
+          & $conda --version
+
+      # --------------------------------------------------
+      # 3. 清空 Miniconda 原本的 package cache
+      #
+      #    這一步很重要。
+      #    避免把 Python 3.14 / Conda base environment
+      #    的套件一起打包進去。
+      # --------------------------------------------------
+      - name: Clean Conda Package Cache
         shell: powershell
         run: |
-          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" create -y -n temp_py38 python=3.8.5 pip
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
+          $pkgs  = "$env:RUNNER_TEMP\Miniconda3\pkgs"
 
-      - name: Check Python 3.8.5
+          Write-Host "Cleaning Conda package cache..."
+
+          & $conda clean --all --yes
+
+          Write-Host "Package cache after cleaning:"
+          Get-ChildItem $pkgs
+
+      # --------------------------------------------------
+      # 4. 只下載 Python 3.8.5 + pip
+      #
+      #    --download-only:
+      #    不建立實際環境，只下載所需 packages
+      # --------------------------------------------------
+      - name: Download Python 3.8.5 Packages
         shell: powershell
         run: |
-          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" run -n temp_py38 python --version
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
 
-      - name: Download Python 3.8.5 packages
-        shell: powershell
-        run: |
-          & "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe" install -n temp_py38 python=3.8.5 pip --download-only -y
+          Write-Host "Downloading Python 3.8.5 packages..."
 
-      - name: Package Conda files
+          & $conda create `
+            --name temp_py38 `
+            python=3.8.5 `
+            pip `
+            --download-only `
+            --yes
+
+      # --------------------------------------------------
+      # 5. 列出實際下載的 packages
+      # --------------------------------------------------
+      - name: List Downloaded Packages
         shell: powershell
         run: |
           $pkgs = "$env:RUNNER_TEMP\Miniconda3\pkgs"
-          $output = "$env:GITHUB_WORKSPACE\conda-packages"
 
-          New-Item -ItemType Directory -Force -Path $output
+          Write-Host "Downloaded packages:"
+          Get-ChildItem $pkgs -File |
+            Select-Object -ExpandProperty Name
 
-          Copy-Item "$pkgs\*.conda" $output -ErrorAction SilentlyContinue
-          Copy-Item "$pkgs\*.tar.bz2" $output -ErrorAction SilentlyContinue
+      # --------------------------------------------------
+      # 6. 建立離線測試環境
+      #
+      #    使用剛才下載的 package cache，
+      #    完全禁止網路。
+      # --------------------------------------------------
+      - name: Test Offline Installation
+        shell: powershell
+        run: |
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
+
+          Write-Host "Testing offline installation..."
+
+          & $conda create `
+            --name offline_test `
+            python=3.8.5 `
+            pip `
+            --offline `
+            --yes
+
+      # --------------------------------------------------
+      # 7. 確認離線環境真的為 Python 3.8.5
+      # --------------------------------------------------
+      - name: Verify Offline Python
+        shell: powershell
+        run: |
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
+
+          Write-Host "Python version from offline environment:"
+
+          & $conda run `
+            --name offline_test `
+            python --version
+
+      # --------------------------------------------------
+      # 8. 建立乾淨的離線套件資料夾
+      # --------------------------------------------------
+      - name: Prepare Offline Package
+        shell: powershell
+        run: |
+          $pkgs  = "$env:RUNNER_TEMP\Miniconda3\pkgs"
+          $output = "$env:GITHUB_WORKSPACE\offline-packages"
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path $output
+
+          Write-Host "Copying Conda packages..."
+
+          Copy-Item `
+            "$pkgs\*.conda" `
+            $output `
+            -ErrorAction SilentlyContinue
+
+          Copy-Item `
+            "$pkgs\*.tar.bz2" `
+            $output `
+            -ErrorAction SilentlyContinue
+
+          Write-Host "Offline package files:"
+          Get-ChildItem $output -File |
+            Select-Object -ExpandProperty Name
+
+      # --------------------------------------------------
+      # 9. 建立 ZIP
+      # --------------------------------------------------
+      - name: Create ZIP
+        shell: powershell
+        run: |
+          $source = "$env:GITHUB_WORKSPACE\offline-packages\*"
+          $zip    = "$env:GITHUB_WORKSPACE\python-3.8.5-offline.zip"
 
           Compress-Archive `
-            -Path "$output\*" `
-            -DestinationPath "$env:GITHUB_WORKSPACE\conda-packages.zip" `
+            -Path $source `
+            -DestinationPath $zip `
             -Force
 
-      - name: Upload offline packages
-        uses: actions/upload-artifact@v4
+          Write-Host "Created:"
+          Write-Host $zip
+
+          Get-Item $zip |
+            Select-Object Name, Length
+
+      # --------------------------------------------------
+      # 10. 上傳 Artifact
+      # --------------------------------------------------
+      - name: Upload Offline Package
+        uses: actions/upload-artifact@v7
         with:
-          name: python-3.8.5-conda-packages
-          path: conda-packages.zip
+          name: python-3.8.5-offline
+          path: python-3.8.5-offline.zip
+          if-no-files-found: error
