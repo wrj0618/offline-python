@@ -1,0 +1,21 @@
+name: Test Windows Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-2025
+
+    steps:
+      - name: Check Windows
+        run: |
+          systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
+
+      - name: Check Python
+        run: |
+          python --version
+
+      - name: Check PowerShell
+        run: |
+          $PSVersionTable.PSVersion
