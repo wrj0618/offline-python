@@ -1,4 +1,4 @@
-name: Build Python 3.8.5 Offline Package
+name: Build Python 3.8.5 Offline Package (Basic)
 
 on:
   workflow_dispatch:
