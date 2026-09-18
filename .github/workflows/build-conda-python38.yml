@@ -1,0 +1,203 @@
+name: Download Python 3.8.5 Conda Packages
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download:
+    runs-on: windows-2025
+
+    steps:
+
+      # ==========================================
+      # 1. 取得 Repository
+      # ==========================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # 2. 安裝 Miniconda
+      # ==========================================
+      - name: Install Miniconda
+        shell: powershell
+        run: |
+          $installer = "$env:RUNNER_TEMP\miniconda.exe"
+          $condaPath = "$env:RUNNER_TEMP\Miniconda3"
+
+          Write-Host "Downloading Miniconda..."
+
+          Invoke-WebRequest `
+            -Uri "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe" `
+            -OutFile $installer
+
+          Write-Host "Installing Miniconda..."
+
+          Start-Process `
+            -FilePath $installer `
+            -ArgumentList `
+              "/InstallationType=JustMe", `
+              "/RegisterPython=0", `
+              "/S", `
+              "/D=$condaPath" `
+            -Wait
+
+          Write-Host "Miniconda installed."
+
+      # ==========================================
+      # 3. 確認 Conda
+      # ==========================================
+      - name: Check Conda
+        shell: powershell
+        run: |
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
+
+          & $conda --version
+
+      # ==========================================
+      # 4. 建立 Python 3.8.5 environment
+      # ==========================================
+      - name: Create Python 3.8.5 Environment
+        shell: powershell
+        run: |
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
+
+          & $conda create `
+            --name temp_py38 `
+            python=3.8.5 `
+            pip `
+            --yes
+
+      # ==========================================
+      # 5. 確認 Python
+      # ==========================================
+      - name: Check Python
+        shell: powershell
+        run: |
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
+
+          & $conda run `
+            --name temp_py38 `
+            python --version
+
+          & $conda run `
+            --name temp_py38 `
+            python -m pip --version
+
+      # ==========================================
+      # 6. 建立 Conda package 資料夾
+      # ==========================================
+      - name: Prepare Conda Packages
+        shell: powershell
+        run: |
+          $packageDir = "$env:GITHUB_WORKSPACE\conda-packages"
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path $packageDir
+
+      # ==========================================
+      # 7. 從 Conda package cache 複製
+      #    Python 3.8.5 所需的 package
+      # ==========================================
+      - name: Collect Conda Packages
+        shell: powershell
+        run: |
+          $conda = "$env:RUNNER_TEMP\Miniconda3\Scripts\conda.exe"
+          $packageDir = "$env:GITHUB_WORKSPACE\conda-packages"
+
+          Write-Host "===== Conda Package Cache ====="
+
+          & $conda info
+
+          Write-Host ""
+          Write-Host "===== Package Files ====="
+
+          # 取得 Conda package cache
+          $pkgsDir = "$env:RUNNER_TEMP\Miniconda3\pkgs"
+
+          # Python 3.8.5 environment 所需的 package
+          $packages = @(
+            "python-3.8.5-h5fd99cc_1.conda",
+            "pip-24.2-py38haa95532_0.conda",
+            "setuptools-75.1.0-py38haa95532_0.conda",
+            "wheel-0.44.0-py38haa95532_0.conda",
+            "openssl-1.1.1w-h2bbff1b_0.conda",
+            "sqlite-3.53.4-hee5a0db_0.conda",
+            "vc-14.3-h2df5915_12.conda",
+            "vs2015_runtime-14.44.35208-ha6b5a95_12.conda"
+          )
+
+          foreach ($package in $packages) {
+
+            $source = Join-Path $pkgsDir $package
+            $target = Join-Path $packageDir $package
+
+            if (Test-Path $source) {
+
+              Write-Host "Copy: $package"
+
+              Copy-Item `
+                $source `
+                $target `
+                -Force
+
+            } else {
+
+              Write-Error "Package not found: $package"
+
+            }
+          }
+
+          Write-Host ""
+          Write-Host "===== Collected Packages ====="
+
+          Get-ChildItem $packageDir |
+            Sort-Object Name |
+            Select-Object -ExpandProperty Name
+
+      # ==========================================
+      # 8. 建立 ZIP
+      # ==========================================
+      - name: Create ZIP
+        shell: powershell
+        run: |
+          $packageDir = "$env:GITHUB_WORKSPACE\conda-packages"
+
+          @"
+          Python version:
+          3.8.5
+
+          Conda packages:
+
+          python-3.8.5
+          pip-24.2
+          setuptools-75.1.0
+          wheel-0.44.0
+          openssl-1.1.1w
+          sqlite-3.53.4
+          vc-14.3
+          vs2015_runtime-14.44
+
+          Offline installation example:
+
+          conda install --offline path\python-3.8.5-h5fd99cc_1.conda
+
+          "@ | Out-File `
+            "$packageDir\README.txt" `
+            -Encoding utf8
+
+          Compress-Archive `
+            -Path "$packageDir\*" `
+            -DestinationPath "$env:GITHUB_WORKSPACE\python-3.8.5-conda-packages.zip" `
+            -Force
+
+      # ==========================================
+      # 9. 上傳 Artifact
+      # ==========================================
+      - name: Upload Conda Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.8.5-conda-packages
+          path: python-3.8.5-conda-packages.zip
+          if-no-files-found: error
