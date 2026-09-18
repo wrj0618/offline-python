@@ -1,0 +1,9 @@
+numpy
+pandas
+openpyxl
+scikit-learn
+requests
+pywebview
+Pillow
+matplotlib
+scipy
